@@ -189,7 +189,7 @@ async function seedData() {
 
     console.log('Creating sample documents...');
     for (const doc of documents) {
-      const [result] = await db.query(
+      const result = await db.query(
         'INSERT IGNORE INTO documents (title, content, is_public, author_id) VALUES (?, ?, ?, ?)',
         [doc.title, doc.content, doc.is_public, doc.author_id]
       );
@@ -205,7 +205,7 @@ async function seedData() {
 
     // Create some document shares
     console.log('Creating sample document shares...');
-    const [sharedDoc] = await db.query('SELECT id FROM documents WHERE title = ?', ['Project Guidelines']);
+    const sharedDoc = await db.query('SELECT id FROM documents WHERE title = ?', ['Project Guidelines']);
     if (sharedDoc.length > 0) {
       await db.query(
         'INSERT IGNORE INTO document_shares (document_id, user_id, permission) VALUES (?, ?, ?)',
@@ -215,7 +215,7 @@ async function seedData() {
 
     // Create some mentions
     console.log('Creating sample mentions...');
-    const [mentionedDoc] = await db.query('SELECT id FROM documents WHERE title = ?', ['Meeting Notes - Q1 Planning']);
+    const mentionedDoc = await db.query('SELECT id FROM documents WHERE title = ?', ['Meeting Notes - Q1 Planning']);
     if (mentionedDoc.length > 0) {
       await db.query(
         'INSERT IGNORE INTO mentions (document_id, user_id, mentioned_by) VALUES (?, ?, ?)',

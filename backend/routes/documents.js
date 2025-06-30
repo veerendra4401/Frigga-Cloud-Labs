@@ -1,16 +1,27 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
-const { authenticateToken, checkDocumentAccess, authorizeRoles } = require('../middleware/auth');
+const { authenticateToken, checkDocumentAccess, authorizeRoles, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Get all documents (with pagination and search)
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '' } = req.query;
+    // Parse page and limit as integers with fallback values
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit) || 10));
+    const search = req.query.search || '';
     const offset = (page - 1) * limit;
     const userId = req.user?.id;
+
+    // Validate parameters
+    if (isNaN(page) || isNaN(limit)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid pagination parameters. Page and limit must be numbers.'
+      });
+    }
 
     let query = `
       SELECT 
@@ -33,56 +44,82 @@ router.get('/', async (req, res) => {
       query += ` AND (d.is_public = 1 OR d.author_id = ? OR EXISTS (
         SELECT 1 FROM document_shares ds WHERE ds.document_id = d.id AND ds.user_id = ?
       ))`;
-      params.push(userId, userId);
+      params.push(Number(userId), Number(userId));
     } else {
       query += ` AND d.is_public = 1`;
     }
 
     query += ` ORDER BY d.updated_at DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), offset);
+    // Ensure limit and offset are numbers
+    params.push(Number(limit), Number(offset));
 
-    const [documents] = await db.query(query, params);
+    console.log('Documents query:', query);
+    console.log('Documents params:', params);
+    console.log('Params types:', params.map(p => typeof p));
+    
+    try {
+      const [documents] = await db.query(query, params);
+      
+      // Get total count with the same conditions
+      let countQuery = `
+        SELECT COUNT(*) as total
+        FROM documents d
+        WHERE 1=1
+      `;
+      const countParams = [];
 
-    // Get total count
-    let countQuery = `
-      SELECT COUNT(*) as total
-      FROM documents d
-      WHERE 1=1
-    `;
-    const countParams = [];
-
-    if (search) {
-      countQuery += ` AND (d.title LIKE ? OR d.content LIKE ?)`;
-      countParams.push(`%${search}%`, `%${search}%`);
-    }
-
-    if (userId) {
-      countQuery += ` AND (d.is_public = 1 OR d.author_id = ? OR EXISTS (
-        SELECT 1 FROM document_shares ds WHERE ds.document_id = d.id AND ds.user_id = ?
-      ))`;
-      countParams.push(userId, userId);
-    } else {
-      countQuery += ` AND d.is_public = 1`;
-    }
-
-    const [countResult] = await db.query(countQuery, countParams);
-    const total = countResult[0].total;
-
-    res.json({
-      success: true,
-      data: documents,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        totalPages: Math.ceil(total / limit)
+      if (search) {
+        countQuery += ` AND (d.title LIKE ? OR d.content LIKE ?)`;
+        countParams.push(`%${search}%`, `%${search}%`);
       }
-    });
+
+      if (userId) {
+        countQuery += ` AND (d.is_public = 1 OR d.author_id = ? OR EXISTS (
+          SELECT 1 FROM document_shares ds WHERE ds.document_id = d.id AND ds.user_id = ?
+        ))`;
+        countParams.push(Number(userId), Number(userId));
+      } else {
+        countQuery += ` AND d.is_public = 1`;
+      }
+
+      console.log('Count query:', countQuery);
+      console.log('Count params:', countParams);
+      console.log('Count params types:', countParams.map(p => typeof p));
+      
+      const [countResult] = await db.query(countQuery, countParams);
+      const total = parseInt(countResult[0].total);
+
+      res.json({
+        success: true,
+        data: documents,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      });
+    } catch (dbError) {
+      console.error('Database query error:', dbError);
+      res.status(500).json({
+        success: false,
+        error: 'Database query failed',
+        details: process.env.NODE_ENV === 'development' ? dbError.message : undefined
+      });
+    }
   } catch (error) {
     console.error('Get documents error:', error);
+    console.error('Query params:', { 
+      page: req.query.page, 
+      limit: req.query.limit, 
+      search: req.query.search,
+      userId: req.user?.id 
+    });
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Failed to fetch documents',
+      message: 'An unexpected error occurred while fetching documents',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -93,13 +130,13 @@ router.get('/:id', checkDocumentAccess, async (req, res) => {
     const document = req.document;
     
     // Get author information
-    const [authors] = await db.query(
+    const authors = await db.query(
       'SELECT id, name, email FROM users WHERE id = ?',
       [document.author_id]
     );
 
     // Get shares information
-    const [shares] = await db.query(`
+    const shares = await db.query(`
       SELECT ds.id, ds.permission, ds.created_at,
              u.id as user_id, u.name as user_name, u.email as user_email
       FROM document_shares ds
@@ -108,7 +145,7 @@ router.get('/:id', checkDocumentAccess, async (req, res) => {
     `, [document.id]);
 
     // Get mentions
-    const [mentions] = await db.query(`
+    const mentions = await db.query(`
       SELECT m.id, m.created_at,
              u.id as user_id, u.name as user_name, u.email as user_email,
              mu.id as mentioned_by_id, mu.name as mentioned_by_name
@@ -143,6 +180,14 @@ router.post('/', authenticateToken, [
   body('isPublic').isBoolean().withMessage('isPublic must be a boolean')
 ], async (req, res) => {
   try {
+    // Defensive check for authentication
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -156,13 +201,13 @@ router.post('/', authenticateToken, [
     const authorId = req.user.id;
 
     // Create document
-    const [result] = await db.query(
+    const result = await db.query(
       'INSERT INTO documents (title, content, is_public, author_id) VALUES (?, ?, ?, ?)',
       [title, content, isPublic, authorId]
     );
 
     // Get created document
-    const [documents] = await db.query(`
+    const documents = await db.query(`
       SELECT 
         d.id, d.title, d.content, d.is_public, d.created_at, d.updated_at,
         u.id as author_id, u.name as author_name, u.email as author_email
@@ -268,7 +313,7 @@ router.put('/:id', authenticateToken, checkDocumentAccess, [
     }
 
     // Get updated document
-    const [documents] = await db.query(`
+    const documents = await db.query(`
       SELECT 
         d.id, d.title, d.content, d.is_public, d.created_at, d.updated_at,
         u.id as author_id, u.name as author_name, u.email as author_email
@@ -358,7 +403,7 @@ router.get('/search', async (req, res) => {
     searchQuery += ` ORDER BY relevance DESC, d.updated_at DESC LIMIT ? OFFSET ?`;
     params.push(parseInt(limit), offset);
 
-    const [documents] = await db.query(searchQuery, params);
+    const documents = await db.query(searchQuery, params);
 
     res.json({
       success: true,
@@ -406,7 +451,7 @@ router.post('/:id/share', authenticateToken, checkDocumentAccess, [
     }
 
     // Check if user exists
-    const [users] = await db.query('SELECT id FROM users WHERE id = ?', [userId]);
+    const users = await db.query('SELECT id FROM users WHERE id = ?', [userId]);
     if (users.length === 0) {
       return res.status(404).json({
         success: false,
@@ -488,7 +533,7 @@ router.get('/:id/versions', checkDocumentAccess, async (req, res) => {
   try {
     const documentId = req.params.id;
 
-    const [versions] = await db.query(`
+    const versions = await db.query(`
       SELECT 
         dv.id, dv.content, dv.version, dv.created_at,
         u.id as author_id, u.name as author_name, u.email as author_email
@@ -516,7 +561,7 @@ router.get('/:id/versions/:versionId', checkDocumentAccess, async (req, res) => 
   try {
     const { id: documentId, versionId } = req.params;
 
-    const [versions] = await db.query(`
+    const versions = await db.query(`
       SELECT 
         dv.id, dv.content, dv.version, dv.created_at,
         u.id as author_id, u.name as author_name, u.email as author_email

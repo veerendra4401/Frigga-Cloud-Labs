@@ -11,13 +11,23 @@ import DashboardPage from './pages/DashboardPage';
 import DocumentPage from './pages/DocumentPage';
 import CreateDocumentPage from './pages/CreateDocumentPage';
 import EditDocumentPage from './pages/EditDocumentPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 // Components
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import Layout from './components/layout/Layout';
 
 function App() {
-  const { isAuthenticated } = useAuthStore();
+  const isAuthenticated = useAuthStore((state) => !!state.token);
+  const isLoading = useAuthStore((state) => state.isLoading);
+
+  // Diagnostic logging
+  console.log('App:', { isAuthenticated, isLoading });
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
 
   return (
     <Router>
@@ -56,6 +66,8 @@ function App() {
           <Route path="/register" element={
             isAuthenticated ? <Navigate to="/dashboard" replace /> : <RegisterPage />
           } />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           
           {/* Protected routes */}
           <Route path="/dashboard" element={

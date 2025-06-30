@@ -4,6 +4,8 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const router = express.Router();
 
@@ -204,15 +206,16 @@ router.post('/forgot-password', [
     const { email } = req.body;
 
     // Check if user exists
-    const [users] = await db.query(
+    const users = await db.query(
       'SELECT id, name FROM users WHERE email = ?',
       [email]
     );
 
     if (users.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'User not found'
+      // For security, always respond with success
+      return res.json({
+        success: true,
+        message: 'Password reset instructions sent to your email'
       });
     }
 
@@ -223,16 +226,34 @@ router.post('/forgot-password', [
       { expiresIn: '1h' }
     );
 
-    // Store reset token in database (you might want to create a separate table for this)
-    // For now, we'll just return the token
-    // In production, you would send this via email
+    // Send email with reset link
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+
+    const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: email,
+      subject: 'Frigga KB Password Reset',
+      html: `
+        <h2>Password Reset Request</h2>
+        <p>Click the link below to reset your password:</p>
+        <a href="${resetUrl}">${resetUrl}</a>
+        <p>If you did not request this, you can ignore this email.</p>
+      `,
+    });
 
     res.json({
       success: true,
-      message: 'Password reset instructions sent to your email',
-      data: {
-        resetToken // Remove this in production
-      }
+      message: 'Password reset instructions sent to your email'
     });
   } catch (error) {
     console.error('Forgot password error:', error);

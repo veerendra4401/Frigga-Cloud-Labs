@@ -8,7 +8,7 @@ const router = express.Router();
 // Get all users (admin only)
 router.get('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
-    const [users] = await db.query(
+    const users = await db.query(
       'SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC'
     );
 
@@ -39,7 +39,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    const [users] = await db.query(
+    const users = await db.query(
       'SELECT id, name, email, role, created_at FROM users WHERE id = ?',
       [id]
     );
@@ -84,7 +84,7 @@ router.put('/profile', authenticateToken, [
 
     // Check if email is already taken
     if (email) {
-      const [existingUsers] = await db.query(
+      const existingUsers = await db.query(
         'SELECT id FROM users WHERE email = ? AND id != ?',
         [email, userId]
       );
@@ -127,7 +127,7 @@ router.put('/profile', authenticateToken, [
     );
 
     // Get updated user
-    const [users] = await db.query(
+    const users = await db.query(
       'SELECT id, name, email, role, created_at FROM users WHERE id = ?',
       [userId]
     );
@@ -153,13 +153,13 @@ router.get('/notifications', authenticateToken, async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
-    const [notifications] = await db.query(
+    const notifications = await db.query(
       'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
       [userId, parseInt(limit), offset]
     );
 
     // Get total count
-    const [countResult] = await db.query(
+    const countResult = await db.query(
       'SELECT COUNT(*) as total FROM notifications WHERE user_id = ?',
       [userId]
     );
@@ -189,7 +189,7 @@ router.put('/notifications/:id/read', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
 
-    const [result] = await db.query(
+    const result = await db.query(
       'UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?',
       [id, userId]
     );
@@ -253,7 +253,7 @@ router.get('/:id/documents', authenticateToken, async (req, res) => {
       });
     }
 
-    const [documents] = await db.query(`
+    const documents = await db.query(`
       SELECT 
         d.id, d.title, d.content, d.is_public, d.created_at, d.updated_at,
         u.id as author_id, u.name as author_name, u.email as author_email
@@ -265,7 +265,7 @@ router.get('/:id/documents', authenticateToken, async (req, res) => {
     `, [id, parseInt(limit), offset]);
 
     // Get total count
-    const [countResult] = await db.query(
+    const countResult = await db.query(
       'SELECT COUNT(*) as total FROM documents WHERE author_id = ?',
       [id]
     );
@@ -305,7 +305,7 @@ router.get('/:id/shared-documents', authenticateToken, async (req, res) => {
       });
     }
 
-    const [documents] = await db.query(`
+    const documents = await db.query(`
       SELECT 
         d.id, d.title, d.content, d.is_public, d.created_at, d.updated_at,
         u.id as author_id, u.name as author_name, u.email as author_email,
@@ -319,7 +319,7 @@ router.get('/:id/shared-documents', authenticateToken, async (req, res) => {
     `, [id, parseInt(limit), offset]);
 
     // Get total count
-    const [countResult] = await db.query(
+    const countResult = await db.query(
       'SELECT COUNT(*) as total FROM document_shares WHERE user_id = ?',
       [id]
     );
@@ -359,7 +359,7 @@ router.get('/:id/mentions', authenticateToken, async (req, res) => {
       });
     }
 
-    const [mentions] = await db.query(`
+    const mentions = await db.query(`
       SELECT 
         m.id, m.created_at,
         d.id as document_id, d.title as document_title,
@@ -373,7 +373,7 @@ router.get('/:id/mentions', authenticateToken, async (req, res) => {
     `, [id, parseInt(limit), offset]);
 
     // Get total count
-    const [countResult] = await db.query(
+    const countResult = await db.query(
       'SELECT COUNT(*) as total FROM mentions WHERE user_id = ?',
       [id]
     );

@@ -44,8 +44,31 @@ const DashboardPage: React.FC = () => {
       setDocuments(response.data.data);
       setPagination(response.data.pagination);
     } catch (error: any) {
-      toast.error('Failed to load documents');
       console.error('Error fetching documents:', error);
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.message || 
+                          error.message || 
+                          'Failed to load documents';
+      
+      // Show a more specific error message
+      toast.error(errorMessage, {
+        duration: 5000,
+        position: 'top-right',
+        style: {
+          background: '#fee2e2',
+          color: '#991b1b',
+          border: '1px solid #f87171'
+        }
+      });
+
+      // Set empty state for documents
+      setDocuments([]);
+      setPagination({
+        page: 1,
+        limit: 10,
+        total: 0,
+        totalPages: 0
+      });
     } finally {
       setIsLoading(false);
     }

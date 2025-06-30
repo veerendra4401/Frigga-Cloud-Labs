@@ -11,7 +11,6 @@ interface User {
 interface AuthState {
   user: User | null;
   token: string | null;
-  isAuthenticated: boolean;
   isLoading: boolean;
 }
 
@@ -22,15 +21,14 @@ interface AuthActions {
   updateUser: (user: User) => void;
 }
 
-type AuthStore = AuthState & AuthActions;
+type AuthStore = AuthState & AuthActions & { isAuthenticated: boolean };
 
 export const useAuthStore = create<AuthStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // State
       user: null,
       token: null,
-      isAuthenticated: false,
       isLoading: false,
 
       // Actions
@@ -38,7 +36,6 @@ export const useAuthStore = create<AuthStore>()(
         set({
           user,
           token,
-          isAuthenticated: true,
           isLoading: false,
         }),
 
@@ -46,7 +43,6 @@ export const useAuthStore = create<AuthStore>()(
         set({
           user: null,
           token: null,
-          isAuthenticated: false,
           isLoading: false,
         }),
 
@@ -59,14 +55,22 @@ export const useAuthStore = create<AuthStore>()(
         set((state) => ({
           user: { ...state.user, ...user },
         })),
+
+      get isAuthenticated() {
+        return !!get().token;
+      },
     }),
     {
       name: 'auth-storage',
       partialize: (state) => ({
         user: state.user,
         token: state.token,
-        isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: (state) => {
+        return () => {
+          state && state.setLoading && state.setLoading(false);
+        };
+      },
     }
   )
 ); 

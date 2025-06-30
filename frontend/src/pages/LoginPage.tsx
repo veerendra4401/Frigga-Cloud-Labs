@@ -27,7 +27,7 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
     try {
       const response = await authService.login(data.email, data.password);
-      login(response.data.user, response.data.token);
+      login(response.data.data.user, response.data.data.token);
       toast.success('Login successful!');
       navigate('/dashboard');
     } catch (error: any) {
