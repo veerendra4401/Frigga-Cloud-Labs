@@ -10,6 +10,7 @@ const db = require('./config/database');
 const authRoutes = require('./routes/auth');
 const documentRoutes = require('./routes/documents');
 const userRoutes = require('./routes/users');
+const deleteUserRoutes = require('./routes/deleteUser');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -50,6 +51,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', deleteUserRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/users', userRoutes);
 

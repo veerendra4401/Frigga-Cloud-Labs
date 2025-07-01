@@ -1,40 +1,24 @@
 import axios from 'axios';
-import { useAuthStore } from '../store/authStore';
+// Account API
+export const accountService = {
+  deleteAccount: () => api.delete('/auth/me'),
+};
+
+const API_URL = 'http://localhost:5000/api';
 
 // Create axios instance
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api',
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: API_URL,
 });
 
 // Request interceptor to add auth token
-api.interceptors.request.use(
-  (config) => {
-    const token = useAuthStore.getState().token;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
-
-// Response interceptor to handle auth errors
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid
-      useAuthStore.getState().logout();
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
+  return config;
+});
 
 // Auth API
 export const authService = {
@@ -104,5 +88,3 @@ export const userService = {
 export const authAPI = authService;
 export const documentsAPI = documentService;
 export const usersAPI = userService;
-
-export default api; 

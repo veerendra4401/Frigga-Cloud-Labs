@@ -7,6 +7,8 @@ const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
+    console.log('Auth Middleware: Received token:', token);
+
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -15,23 +17,33 @@ const authenticateToken = async (req, res, next) => {
     }
 
     // Verify JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      console.log('Auth Middleware: Decoded payload:', decoded);
+    } catch (err) {
+      console.error('Auth Middleware: JWT verification error:', err);
+      throw err;
+    }
+
     // Get user from database
-    const [user] = await db.query(
+    const [rows] = await db.query(
       'SELECT id, email, name, role, created_at FROM users WHERE id = ?',
       [decoded.userId]
     );
+    console.log('Auth Middleware: DB user rows:', rows);
 
-    if (!user || user.length === 0) {
+    if (!rows || rows.length === 0) {
+      console.log('Auth Middleware: No user found for userId:', decoded.userId);
       return res.status(401).json({
         success: false,
         error: 'User not found'
       });
     }
 
-    // Add user to request object
-    req.user = user[0];
+    // Add user to request object (handle both array and object)
+    req.user = Array.isArray(rows) ? rows[0] : rows;
+    console.log('Auth Middleware: req.user set to:', req.user);
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -62,18 +74,27 @@ const optionalAuth = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const [user] = await db.query(
-        'SELECT id, email, name, role, created_at FROM users WHERE id = ?',
-        [decoded.userId]
-      );
+    console.log('OptionalAuth Middleware: Received token:', token);
 
-      if (user && user.length > 0) {
-        req.user = user[0];
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        console.log('OptionalAuth Middleware: Decoded payload:', decoded);
+        const [rows] = await db.query(
+          'SELECT id, email, name, role, created_at FROM users WHERE id = ?',
+          [decoded.userId]
+        );
+
+        if (rows && rows.length > 0) {
+          req.user = rows[0];
+          console.log('OptionalAuth Middleware: req.user set to:', req.user);
+        } else {
+          console.log('OptionalAuth Middleware: No user found for userId:', decoded.userId);
+        }
+      } catch (err) {
+        console.error('OptionalAuth Middleware: JWT verification error:', err);
       }
     }
-    
     next();
   } catch (error) {
     // Continue without authentication if token is invalid
@@ -107,21 +128,30 @@ const checkDocumentAccess = async (req, res, next) => {
   try {
     const documentId = req.params.id;
     const userId = req.user?.id;
+    console.log('[checkDocumentAccess] documentId:', documentId, 'userId:', userId);
+
+    // Defensive: ensure documentId is a number
+    const docIdNum = Number(documentId);
+    if (!docIdNum || isNaN(docIdNum)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid document ID'
+      });
+    }
 
     // Get document
     const [documents] = await db.query(
       'SELECT * FROM documents WHERE id = ?',
-      [documentId]
+      [docIdNum]
     );
-
-    if (!documents || documents.length === 0) {
+    const document = documents && documents[0];
+    if (!document) {
+      console.log('[checkDocumentAccess] Document not found for id:', docIdNum);
       return res.status(404).json({
         success: false,
         error: 'Document not found'
       });
     }
-
-    const document = documents[0];
 
     // Public documents are accessible to everyone
     if (document.is_public) {
@@ -138,7 +168,7 @@ const checkDocumentAccess = async (req, res, next) => {
     }
 
     // Check if user is the author
-    if (document.author_id === userId) {
+    if (document.author_id == userId) {
       req.document = document;
       return next();
     }
@@ -146,7 +176,7 @@ const checkDocumentAccess = async (req, res, next) => {
     // Check if user has shared access
     const [shares] = await db.query(
       'SELECT * FROM document_shares WHERE document_id = ? AND user_id = ?',
-      [documentId, userId]
+      [docIdNum, userId]
     );
 
     if (shares && shares.length > 0) {
@@ -155,6 +185,7 @@ const checkDocumentAccess = async (req, res, next) => {
       return next();
     }
 
+    console.log('[checkDocumentAccess] Access denied for user', userId, 'to document', docIdNum);
     return res.status(403).json({
       success: false,
       error: 'Access denied to this document'
@@ -173,4 +204,4 @@ module.exports = {
   optionalAuth,
   authorizeRoles,
   checkDocumentAccess
-}; 
+};

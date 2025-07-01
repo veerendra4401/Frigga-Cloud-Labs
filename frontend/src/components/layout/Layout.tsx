@@ -22,6 +22,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
+
   const { user, logout } = useAuthStore();
 
   const handleLogout = () => {
@@ -34,6 +35,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     if (searchQuery.trim()) {
       navigate(`/dashboard?search=${encodeURIComponent(searchQuery.trim())}`);
     }
+  };
+
+  const handleSettings = () => {
+    navigate('/settings');
+  };
+
+  const handleNotifications = () => {
+    navigate('/notifications');
   };
 
   const navigation = [
@@ -195,10 +204,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             {/* Right side actions */}
             <div className="flex items-center gap-4">
-              <button className="p-2 text-gray-400 hover:text-gray-600">
+              <button className="p-2 text-gray-400 hover:text-gray-600" onClick={handleNotifications}>
                 <Bell className="h-5 w-5" />
               </button>
-              <button className="p-2 text-gray-400 hover:text-gray-600">
+              <button className="p-2 text-gray-400 hover:text-gray-600" onClick={handleSettings}>
                 <Settings className="h-5 w-5" />
               </button>
             </div>

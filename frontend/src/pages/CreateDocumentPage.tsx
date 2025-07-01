@@ -16,6 +16,8 @@ const CreateDocumentPage: React.FC = () => {
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
   const {
@@ -26,21 +28,33 @@ const CreateDocumentPage: React.FC = () => {
 
   const onSubmit = async (data: CreateDocumentFormData) => {
     if (!content.trim()) {
+      setError('Document content is required');
       toast.error('Document content is required');
       return;
     }
 
     setIsLoading(true);
+    setError('');
+    setSuccess(false);
     try {
       const response = await documentService.createDocument({
         title: data.title,
         content,
         isPublic
       });
-      
-      toast.success('Document created successfully!');
-      navigate(`/documents/${response.data.data.id}`);
+      if (response.data && response.data.success) {
+        setSuccess(true);
+        setError('');
+        toast.success('Document created successfully!');
+        navigate(`/documents/${response.data.data.id}`);
+      } else {
+        setSuccess(false);
+        setError(response.data?.error || 'Failed to create document');
+        toast.error(response.data?.error || 'Failed to create document');
+      }
     } catch (error: any) {
+      setSuccess(false);
+      setError(error.response?.data?.error || 'Failed to create document');
       toast.error(error.response?.data?.error || 'Failed to create document');
     } finally {
       setIsLoading(false);

@@ -2,7 +2,6 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
-
 // Pages
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -13,14 +12,22 @@ import CreateDocumentPage from './pages/CreateDocumentPage';
 import EditDocumentPage from './pages/EditDocumentPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
-
+import SettingsPage from './pages/SettingsPage';
+import NotificationsPage from './pages/NotificationsPage';
+import AccountDetailsPage from './pages/AccountDetailsPage';
 // Components
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import Layout from './components/layout/Layout';
 
 function App() {
+
   const isAuthenticated = useAuthStore((state) => !!state.token);
   const isLoading = useAuthStore((state) => state.isLoading);
+  const restore = useAuthStore((state) => state.restore);
+
+  React.useEffect(() => {
+    restore();
+  }, [restore]);
 
   // Diagnostic logging
   console.log('App:', { isAuthenticated, isLoading });
@@ -100,6 +107,20 @@ function App() {
             </ProtectedRoute>
           } />
           
+          <Route path="/settings" element={
+            <ProtectedRoute>
+              <Layout>
+                <SettingsPage />
+              </Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/notifications" element={
+            <ProtectedRoute>
+              <Layout>
+                <NotificationsPage />
+              </Layout>
+            </ProtectedRoute>
+          } />
           {/* Catch all route */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

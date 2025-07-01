@@ -40,17 +40,36 @@ const DashboardPage: React.FC = () => {
   const fetchDocuments = async (page = 1, search = '') => {
     try {
       setIsLoading(true);
+      console.log('Fetching documents with params:', { page, limit: 10, search });
       const response = await documentService.getDocuments(page, 10, search);
+      console.log('Documents response:', response.data);
+      
+      if (!response.data.data || !Array.isArray(response.data.data)) {
+        console.error('Invalid response format:', response.data);
+        toast.error('Received invalid data format from server');
+        return;
+      }
+      
       setDocuments(response.data.data);
       setPagination(response.data.pagination);
+      console.log('Updated state:', {
+        documentsCount: response.data.data.length,
+        pagination: response.data.pagination
+      });
     } catch (error: any) {
       console.error('Error fetching documents:', error);
+      console.error('Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message
+      });
+      
       const errorMessage = error.response?.data?.error || 
                           error.response?.data?.message || 
                           error.message || 
                           'Failed to load documents';
       
-      // Show a more specific error message
       toast.error(errorMessage, {
         duration: 5000,
         position: 'top-right',
@@ -109,13 +128,15 @@ const DashboardPage: React.FC = () => {
             Welcome back, {user?.name}! Manage your knowledge base documents.
           </p>
         </div>
-        <Link
-          to="/documents/create"
-          className="mt-4 sm:mt-0 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Create Document
-        </Link>
+        {user && (
+          <Link
+            to="/documents/create"
+            className="mt-4 sm:mt-0 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Create Document
+          </Link>
+        )}
       </div>
 
       {/* Search Bar */}
@@ -161,7 +182,7 @@ const DashboardPage: React.FC = () => {
                 : 'Create your first document to get started'
               }
             </p>
-            {!searchTerm && (
+            {!searchTerm && user && (
               <Link
                 to="/documents/create"
                 className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors inline-flex items-center"
@@ -271,4 +292,4 @@ const DashboardPage: React.FC = () => {
   );
 };
 
-export default DashboardPage; 
+export default DashboardPage;

@@ -15,16 +15,11 @@ router.get('/', optionalAuth, async (req, res) => {
     const offset = (page - 1) * limit;
     const userId = req.user?.id;
 
-    // Validate parameters
-    if (isNaN(page) || isNaN(limit)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid pagination parameters. Page and limit must be numbers.'
-      });
-    }
+    console.log('Document request params:', { page, limit, search, offset, userId });
 
+    // Build base query without LIMIT/OFFSET
     let query = `
-      SELECT 
+      SELECT SQL_CALC_FOUND_ROWS
         d.id, d.title, d.content, d.is_public, d.created_at, d.updated_at,
         u.id as author_id, u.name as author_name, u.email as author_email
       FROM documents d
@@ -44,82 +39,74 @@ router.get('/', optionalAuth, async (req, res) => {
       query += ` AND (d.is_public = 1 OR d.author_id = ? OR EXISTS (
         SELECT 1 FROM document_shares ds WHERE ds.document_id = d.id AND ds.user_id = ?
       ))`;
-      params.push(Number(userId), Number(userId));
+      params.push(userId, userId);
     } else {
       query += ` AND d.is_public = 1`;
     }
 
-    query += ` ORDER BY d.updated_at DESC LIMIT ? OFFSET ?`;
-    // Ensure limit and offset are numbers
-    params.push(Number(limit), Number(offset));
+    // Add ORDER BY and append LIMIT/OFFSET directly
+    query += ` ORDER BY d.updated_at DESC LIMIT ${limit} OFFSET ${offset}`;
 
-    console.log('Documents query:', query);
-    console.log('Documents params:', params);
-    console.log('Params types:', params.map(p => typeof p));
-    
-    try {
-      const [documents] = await db.query(query, params);
-      
-      // Get total count with the same conditions
-      let countQuery = `
-        SELECT COUNT(*) as total
-        FROM documents d
-        WHERE 1=1
-      `;
-      const countParams = [];
+    console.log('Query:', query);
+    console.log('Params:', params);
 
-      if (search) {
-        countQuery += ` AND (d.title LIKE ? OR d.content LIKE ?)`;
-        countParams.push(`%${search}%`, `%${search}%`);
-      }
-
-      if (userId) {
-        countQuery += ` AND (d.is_public = 1 OR d.author_id = ? OR EXISTS (
-          SELECT 1 FROM document_shares ds WHERE ds.document_id = d.id AND ds.user_id = ?
-        ))`;
-        countParams.push(Number(userId), Number(userId));
-      } else {
-        countQuery += ` AND d.is_public = 1`;
-      }
-
-      console.log('Count query:', countQuery);
-      console.log('Count params:', countParams);
-      console.log('Count params types:', countParams.map(p => typeof p));
-      
-      const [countResult] = await db.query(countQuery, countParams);
-      const total = parseInt(countResult[0].total);
-
-      res.json({
-        success: true,
-        data: documents,
-        pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total,
-          totalPages: Math.ceil(total / limit)
-        }
-      });
-    } catch (dbError) {
-      console.error('Database query error:', dbError);
-      res.status(500).json({
-        success: false,
-        error: 'Database query failed',
-        details: process.env.NODE_ENV === 'development' ? dbError.message : undefined
-      });
+    // Execute query
+    let documents = await db.query(query, params);
+    // Handle both [rows, fields] and rows-only style
+    if (Array.isArray(documents) && Array.isArray(documents[0])) {
+      documents = documents[0];
     }
+
+    // Get total count using FOUND_ROWS()
+    let totalResult = await db.query('SELECT FOUND_ROWS() as total');
+    let total;
+    if (Array.isArray(totalResult)) {
+      if (Array.isArray(totalResult[0])) {
+        total = totalResult[0][0]?.total || 0;
+      } else {
+        total = totalResult[0]?.total || 0;
+      }
+    } else {
+      total = 0;
+    }
+
+    // Format the response
+    const response = {
+      success: true,
+      data: (Array.isArray(documents) ? documents : []).map(doc => ({
+        ...doc,
+        id: Number(doc.id), // Ensure id is always a number
+        is_public: Boolean(doc.is_public),
+        created_at: doc.created_at instanceof Date ? doc.created_at.toISOString() : doc.created_at,
+        updated_at: doc.updated_at instanceof Date ? doc.updated_at.toISOString() : doc.updated_at
+      })),
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: Number(total),
+        totalPages: Math.ceil(total / limit)
+      }
+    };
+
+    console.log('Response:', {
+      documentCount: response.data.length,
+      documentIds: response.data.map(d => d.id),
+      pagination: response.pagination
+    });
+
+    res.json(response);
   } catch (error) {
     console.error('Get documents error:', error);
-    console.error('Query params:', { 
-      page: req.query.page, 
-      limit: req.query.limit, 
-      search: req.query.search,
-      userId: req.user?.id 
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql
     });
     res.status(500).json({
       success: false,
       error: 'Failed to fetch documents',
-      message: 'An unexpected error occurred while fetching documents',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: error.message
     });
   }
 });
@@ -174,22 +161,30 @@ router.get('/:id', checkDocumentAccess, async (req, res) => {
 });
 
 // Create new document
-router.post('/', authenticateToken, [
-  body('title').trim().isLength({ min: 1 }).withMessage('Title is required'),
-  body('content').notEmpty().withMessage('Content is required'),
-  body('isPublic').isBoolean().withMessage('isPublic must be a boolean')
-], async (req, res) => {
+router.post(
+  '/',
+  authenticateToken,
+  [
+    body('title').trim().isLength({ min: 1 }).withMessage('Title is required'),
+    body('content').notEmpty().withMessage('Content is required'),
+    body('isPublic').custom((value, { req }) => {
+      // Accept both boolean and string 'true'/'false' from frontend
+      if (typeof value === 'boolean') return true;
+      if (typeof value === 'string' && (value === 'true' || value === 'false')) return true;
+      throw new Error('isPublic must be a boolean');
+    })
+  ],
+  async (req, res) => {
   try {
-    // Defensive check for authentication
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
-    }
+    console.log('Document creation request:', {
+      body: req.body,
+      headers: req.headers,
+      user: req.user
+    });
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors:', errors.array());
       return res.status(400).json({
         success: false,
         error: 'Validation error',
@@ -197,17 +192,38 @@ router.post('/', authenticateToken, [
       });
     }
 
-    const { title, content, isPublic } = req.body;
-    const authorId = req.user.id;
 
-    // Create document
+    let { title, content, isPublic } = req.body;
+    // Accept string 'true'/'false' from frontend and convert to boolean
+    if (typeof isPublic === 'string') {
+      isPublic = isPublic === 'true';
+    }
+    // Always use req.user.id (guaranteed by authenticateToken)
+    let authorId = parseInt(req.user.id);
+    if (!authorId || isNaN(authorId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Authenticated user ID missing.'
+      });
+    }
+
+    console.log('Creating document with:', {
+      title,
+      contentLength: content?.length,
+      isPublic,
+      authorId
+    });
+
+    // Create document (MySQL: use 0/1 for booleans, no CAST needed)
     const result = await db.query(
       'INSERT INTO documents (title, content, is_public, author_id) VALUES (?, ?, ?, ?)',
-      [title, content, isPublic, authorId]
+      [title, content, isPublic ? 1 : 0, authorId]
     );
 
+    console.log('Document created:', { insertId: result.insertId });
+
     // Get created document
-    const documents = await db.query(`
+    const [documents] = await db.query(`
       SELECT 
         d.id, d.title, d.content, d.is_public, d.created_at, d.updated_at,
         u.id as author_id, u.name as author_name, u.email as author_email
@@ -229,9 +245,15 @@ router.post('/', authenticateToken, [
     });
   } catch (error) {
     console.error('Create document error:', error);
+    console.error('Request details:', {
+      body: req.body,
+      user: req.user,
+      headers: req.headers
+    });
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Failed to create document',
+      message: error.message
     });
   }
 });
