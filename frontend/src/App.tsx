@@ -49,18 +49,27 @@ function App() {
             },
             success: {
               duration: 3000,
+              style: {
+                background: '#059669',
+                color: '#fff',
+              },
               iconTheme: {
-                primary: '#10b981',
-                secondary: '#fff',
+                primary: '#fff',
+                secondary: '#059669',
               },
             },
             error: {
               duration: 5000,
+              style: {
+                background: '#dc2626',
+                color: '#fff',
+              },
               iconTheme: {
-                primary: '#ef4444',
-                secondary: '#fff',
+                primary: '#fff',
+                secondary: '#dc2626',
               },
             },
+            id: 'unique-toast',
           }}
         />
         

@@ -1,8 +1,4 @@
 import axios from 'axios';
-// Account API
-export const accountService = {
-  deleteAccount: () => api.delete('/auth/me'),
-};
 
 const API_URL = 'http://localhost:5000/api';
 
@@ -19,6 +15,37 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Response interceptor to handle errors consistently
+api.interceptors.response.use(
+  (response) => {
+    // For successful responses (2xx), always return as success
+    if (response.status >= 200 && response.status < 300) {
+      return response;
+    }
+    
+    // Only convert to error if success is explicitly false
+    if (response.data && response.data.success === false) {
+      return Promise.reject({
+        response: {
+          data: {
+            error: response.data.error || response.data.message || 'Operation failed'
+          }
+        }
+      });
+    }
+    return response;
+  },
+  (error) => {
+    // Pass through the original error object
+    return Promise.reject(error);
+  }
+);
+
+// Account API
+export const accountService = {
+  deleteAccount: () => api.delete('/auth/me'),
+};
 
 // Auth API
 export const authService = {
@@ -44,29 +71,74 @@ export const documentService = {
   getDocuments: (page = 1, limit = 10, search = '') =>
     api.get('/documents', { params: { page, limit, search } }),
 
-  getDocument: (id: string) => api.get(`/documents/${id}`),
+  getDocument: (id: string | number) => {
+    // Ensure id is a number
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+    if (isNaN(numericId)) {
+      throw new Error('Invalid document ID');
+    }
+    return api.get(`/documents/${numericId}`);
+  },
 
   createDocument: (data: { title: string; content: string; isPublic: boolean }) =>
     api.post('/documents', data),
 
-  updateDocument: (id: string, data: { title?: string; content?: string; isPublic?: boolean }) =>
-    api.put(`/documents/${id}`, data),
+  updateDocument: (id: string | number, data: { title?: string; content?: string; isPublic?: boolean }) => {
+    // Ensure id is a number
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+    if (isNaN(numericId)) {
+      throw new Error('Invalid document ID');
+    }
+    return api.put(`/documents/${numericId}`, data);
+  },
 
-  deleteDocument: (id: string) => api.delete(`/documents/${id}`),
+  deleteDocument: (id: string | number) => {
+    // Ensure id is a number
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+    if (isNaN(numericId)) {
+      throw new Error('Invalid document ID');
+    }
+    return api.delete(`/documents/${numericId}`);
+  },
 
   searchDocuments: (query: string, params?: { page?: number; limit?: number }) =>
     api.get('/documents', { params: { search: query, ...params } }),
 
-  shareDocument: (id: string, data: { userId: string; permission: 'VIEW' | 'EDIT' }) =>
-    api.post(`/documents/${id}/share`, data),
+  shareDocument: (id: string | number, data: { userId: string; permission: 'VIEW' | 'EDIT' }) => {
+    // Ensure id is a number
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+    if (isNaN(numericId)) {
+      throw new Error('Invalid document ID');
+    }
+    return api.post(`/documents/${numericId}/share`, data);
+  },
 
-  removeShare: (id: string, userId: string) =>
-    api.delete(`/documents/${id}/share`, { data: { userId } }),
+  removeShare: (id: string | number, userId: string) => {
+    // Ensure id is a number
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+    if (isNaN(numericId)) {
+      throw new Error('Invalid document ID');
+    }
+    return api.delete(`/documents/${numericId}/share`, { data: { userId } });
+  },
 
-  getVersions: (id: string) => api.get(`/documents/${id}/versions`),
+  getVersions: (id: string | number) => {
+    // Ensure id is a number
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+    if (isNaN(numericId)) {
+      throw new Error('Invalid document ID');
+    }
+    return api.get(`/documents/${numericId}/versions`);
+  },
 
-  getVersion: (id: string, versionId: string) =>
-    api.get(`/documents/${id}/versions/${versionId}`),
+  getVersion: (id: string | number, versionId: string) => {
+    // Ensure id is a number
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+    if (isNaN(numericId)) {
+      throw new Error('Invalid document ID');
+    }
+    return api.get(`/documents/${numericId}/versions/${versionId}`);
+  },
 };
 
 // Users API

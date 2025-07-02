@@ -12,6 +12,15 @@ const dbConfig = {
   timezone: '+00:00',
   // Connection pool configuration
   connectionLimit: 10,
+  // Return results as arrays
+  rowsAsArray: false,
+  // Convert MySQL boolean values to JS booleans
+  typeCast: function (field, next) {
+    if (field.type === 'TINY' && field.length === 1) {
+      return field.string() === '1'; // Convert TINYINT(1) to boolean
+    }
+    return next();
+  },
   // SSL configuration for production
   ...(process.env.NODE_ENV === 'production' && {
     ssl: {
@@ -36,13 +45,25 @@ async function testConnection() {
   }
 }
 
-// Execute query with error handling
+// Execute query with error handling and consistent result format
 async function query(sql, params = []) {
   try {
+    console.log('Executing query:', {
+      sql,
+      params
+    });
     const [rows] = await pool.execute(sql, params);
+    console.log('Query result:', {
+      rowCount: rows?.length,
+      firstRow: rows?.[0]
+    });
     return rows;
   } catch (error) {
-    console.error('Database query error:', error);
+    console.error('Database query error:', {
+      sql,
+      params,
+      error
+    });
     throw error;
   }
 }

@@ -50,11 +50,17 @@ const DashboardPage: React.FC = () => {
         return;
       }
       
+      // Log each document's ID and type
+      response.data.data.forEach((doc: Document) => {
+        console.log('Document ID:', doc.id, 'Type:', typeof doc.id);
+      });
+      
       setDocuments(response.data.data);
       setPagination(response.data.pagination);
       console.log('Updated state:', {
         documentsCount: response.data.data.length,
-        pagination: response.data.pagination
+        pagination: response.data.pagination,
+        documentIds: response.data.data.map((d: Document) => ({ id: d.id, type: typeof d.id }))
       });
     } catch (error: any) {
       console.error('Error fetching documents:', error);

@@ -114,8 +114,23 @@ router.get('/', optionalAuth, async (req, res) => {
 // Get document by ID
 router.get('/:id', checkDocumentAccess, async (req, res) => {
   try {
+    console.log('Document request params:', {
+      id: req.params.id,
+      type: typeof req.params.id,
+      parsedId: parseInt(req.params.id, 10)
+    });
+
     const document = req.document;
+    console.log('[GET /api/documents/:id] Requested ID:', req.params.id, 'Resolved document:', document?.id);
     
+    if (!document) {
+      console.log('Document not found for ID:', req.params.id);
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
     // Get author information
     const authors = await db.query(
       'SELECT id, name, email FROM users WHERE id = ?',
@@ -142,7 +157,7 @@ router.get('/:id', checkDocumentAccess, async (req, res) => {
       WHERE m.document_id = ?
     `, [document.id]);
 
-    res.json({
+    const response = {
       success: true,
       data: {
         ...document,
@@ -150,9 +165,23 @@ router.get('/:id', checkDocumentAccess, async (req, res) => {
         shares,
         mentions
       }
+    };
+
+    console.log('Sending document response:', {
+      id: response.data.id,
+      title: response.data.title,
+      authorId: response.data.author_id
     });
+
+    res.json(response);
   } catch (error) {
     console.error('Get document error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql
+    });
     res.status(500).json({
       success: false,
       error: 'Internal server error'
@@ -223,7 +252,7 @@ router.post(
     console.log('Document created:', { insertId: result.insertId });
 
     // Get created document
-    const [documents] = await db.query(`
+    let documents = await db.query(`
       SELECT 
         d.id, d.title, d.content, d.is_public, d.created_at, d.updated_at,
         u.id as author_id, u.name as author_name, u.email as author_email
@@ -231,6 +260,10 @@ router.post(
       JOIN users u ON d.author_id = u.id
       WHERE d.id = ?
     `, [result.insertId]);
+    // Handle both [rows, fields] and rows-only style
+    if (Array.isArray(documents) && Array.isArray(documents[0])) {
+      documents = documents[0];
+    }
 
     // Create initial version
     await db.query(
@@ -322,11 +355,18 @@ router.put('/:id', authenticateToken, checkDocumentAccess, [
 
     // Create new version if content changed
     if (content !== undefined) {
-      const [versions] = await db.query(
+      let versions = await db.query(
         'SELECT MAX(version) as max_version FROM document_versions WHERE document_id = ?',
         [document.id]
       );
-      const nextVersion = (versions[0].max_version || 0) + 1;
+      // Handle both [rows, fields] and rows-only style
+      if (Array.isArray(versions) && Array.isArray(versions[0])) {
+        versions = versions[0];
+      }
+      const maxVersion = (Array.isArray(versions) && versions.length > 0 && versions[0].max_version !== undefined)
+        ? versions[0].max_version
+        : 0;
+      const nextVersion = (maxVersion || 0) + 1;
 
       await db.query(
         'INSERT INTO document_versions (document_id, content, version, author_id) VALUES (?, ?, ?, ?)',

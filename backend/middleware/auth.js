@@ -126,13 +126,21 @@ const authorizeRoles = (...roles) => {
 // Document access middleware
 const checkDocumentAccess = async (req, res, next) => {
   try {
-    const documentId = req.params.id;
+    const documentId = parseInt(req.params.id, 10);
     const userId = req.user?.id;
-    console.log('[checkDocumentAccess] documentId:', documentId, 'userId:', userId);
 
-    // Defensive: ensure documentId is a number
-    const docIdNum = Number(documentId);
-    if (!docIdNum || isNaN(docIdNum)) {
+    console.log('Checking document access:', {
+      rawDocumentId: req.params.id,
+      parsedDocumentId: documentId,
+      userId,
+      documentIdType: typeof documentId,
+      userIdType: typeof userId,
+      isAuthenticated: !!userId
+    });
+
+    // Validate document ID
+    if (isNaN(documentId)) {
+      console.log('Invalid document ID:', req.params.id);
       return res.status(400).json({
         success: false,
         error: 'Invalid document ID'
@@ -140,58 +148,125 @@ const checkDocumentAccess = async (req, res, next) => {
     }
 
     // Get document
-    const [documents] = await db.query(
-      'SELECT * FROM documents WHERE id = ?',
-      [docIdNum]
-    );
-    const document = documents && documents[0];
-    if (!document) {
-      console.log('[checkDocumentAccess] Document not found for id:', docIdNum);
-      return res.status(404).json({
+    let result;
+    try {
+      result = await db.query(
+        'SELECT * FROM documents WHERE id = ?',
+        [documentId]
+      );
+      
+      // MySQL2 returns an array with [rows, fields]
+      // We need to handle both array of arrays and simple array results
+      const documents = Array.isArray(result[0]) ? result[0] : result;
+      
+      console.log('Raw query result:', {
+        resultType: typeof result,
+        isArray: Array.isArray(result),
+        length: result?.length,
+        firstElement: result?.[0],
+        documents
+      });
+
+      if (!documents || documents.length === 0) {
+        console.log('Document not found in database:', documentId);
+        return res.status(404).json({
+          success: false,
+          error: 'Document not found'
+        });
+      }
+
+      const document = documents[0];
+      
+      console.log('Document found:', {
+        id: document.id,
+        isPublic: document.is_public,
+        authorId: document.author_id
+      });
+
+      // Public documents are accessible to everyone
+      if (document.is_public === 1 || document.is_public === true) {
+        console.log('Document is public, granting access');
+        req.document = document;
+        return next();
+      }
+
+      // Private documents require authentication
+      if (!userId) {
+        console.log('Document is private and user is not authenticated');
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required to access this document'
+        });
+      }
+
+      // Check if user is the author
+      const authorId = parseInt(document.author_id, 10);
+      const currentUserId = parseInt(userId, 10);
+
+      console.log('Checking author access:', {
+        authorId,
+        currentUserId,
+        isAuthor: authorId === currentUserId
+      });
+
+      if (authorId === currentUserId) {
+        console.log('User is the author, granting access');
+        req.document = document;
+        return next();
+      }
+
+      // Check if user has shared access
+      let shareResult;
+      try {
+        shareResult = await db.query(
+          'SELECT * FROM document_shares WHERE document_id = ? AND user_id = ?',
+          [documentId, currentUserId]
+        );
+        
+        // Handle MySQL2 result format
+        const shares = Array.isArray(shareResult[0]) ? shareResult[0] : shareResult;
+
+        console.log('Share check result:', {
+          hasShares: shares && shares.length > 0,
+          shareCount: shares?.length
+        });
+
+        if (shares && shares.length > 0) {
+          console.log('User has shared access, granting access');
+          req.document = document;
+          req.documentShare = shares[0];
+          return next();
+        }
+      } catch (dbError) {
+        console.error('Share query error:', dbError);
+        return res.status(500).json({
+          success: false,
+          error: 'Database error while checking document access'
+        });
+      }
+
+      console.log('Access denied to document');
+      return res.status(403).json({
         success: false,
-        error: 'Document not found'
+        error: 'You do not have permission to access this document'
+      });
+
+    } catch (dbError) {
+      console.error('Database query error:', dbError);
+      return res.status(500).json({
+        success: false,
+        error: 'Database error while fetching document'
       });
     }
-
-    // Public documents are accessible to everyone
-    if (document.is_public) {
-      req.document = document;
-      return next();
-    }
-
-    // Private documents require authentication
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required for private documents'
-      });
-    }
-
-    // Check if user is the author
-    if (document.author_id == userId) {
-      req.document = document;
-      return next();
-    }
-
-    // Check if user has shared access
-    const [shares] = await db.query(
-      'SELECT * FROM document_shares WHERE document_id = ? AND user_id = ?',
-      [docIdNum, userId]
-    );
-
-    if (shares && shares.length > 0) {
-      req.document = document;
-      req.documentShare = shares[0];
-      return next();
-    }
-
-    console.log('[checkDocumentAccess] Access denied for user', userId, 'to document', docIdNum);
-    return res.status(403).json({
-      success: false,
-      error: 'Access denied to this document'
-    });
   } catch (error) {
     console.error('Document access check error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      stack: error.stack
+    });
     return res.status(500).json({
       success: false,
       error: 'Error checking document access'

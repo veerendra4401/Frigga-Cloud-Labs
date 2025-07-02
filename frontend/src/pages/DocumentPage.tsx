@@ -61,6 +61,7 @@ const DocumentPage: React.FC = () => {
 
   useEffect(() => {
     if (id) {
+      console.log('Attempting to fetch document with ID:', id, 'Type:', typeof id);
       fetchDocument();
     }
   }, [id]);
@@ -68,9 +69,19 @@ const DocumentPage: React.FC = () => {
   const fetchDocument = async () => {
     try {
       setIsLoading(true);
+      console.log('Making API request for document ID:', id);
       const response = await documentService.getDocument(id!);
+      console.log('Document API response:', response.data);
       setDocument(response.data.data);
     } catch (error: any) {
+      console.error('Error fetching document:', error);
+      console.error('Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message
+      });
+      
       if (error.response?.status === 404) {
         toast.error('Document not found');
         navigate('/dashboard');

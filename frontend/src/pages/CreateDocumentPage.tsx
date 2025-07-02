@@ -16,8 +16,6 @@ const CreateDocumentPage: React.FC = () => {
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
   const {
@@ -28,34 +26,51 @@ const CreateDocumentPage: React.FC = () => {
 
   const onSubmit = async (data: CreateDocumentFormData) => {
     if (!content.trim()) {
-      setError('Document content is required');
-      toast.error('Document content is required');
+      toast.error('Document content is required', { id: 'content-required' });
       return;
     }
 
     setIsLoading(true);
-    setError('');
-    setSuccess(false);
+    const toastId = 'create-document';
     try {
       const response = await documentService.createDocument({
         title: data.title,
         content,
         isPublic
       });
-      if (response.data && response.data.success) {
-        setSuccess(true);
-        setError('');
-        toast.success('Document created successfully!');
-        navigate(`/documents/${response.data.data.id}`);
-      } else {
-        setSuccess(false);
-        setError(response.data?.error || 'Failed to create document');
-        toast.error(response.data?.error || 'Failed to create document');
+
+      console.log('Create document response:', {
+        status: response?.status,
+        data: response?.data,
+        success: response?.data?.success
+      });
+
+      // Only show success toast and navigate if status is 201 and success is true
+      if (response?.status === 201 && response?.data?.success) {
+        const docId = response?.data?.data?.id;
+        if (docId) {
+          toast.success('Document created successfully!', { id: toastId });
+          setTimeout(() => {
+            navigate(`/documents/${docId}`);
+          }, 200); // Give the toast a moment to show
+        } else {
+          toast.error('Document created but no ID returned!', { id: toastId + '-noid' });
+        }
+        return;
       }
+
+      // If not success, show error
+      const errorMessage = response?.data?.error || response?.data?.message || 'Failed to create document';
+      toast.error(errorMessage, { id: toastId });
     } catch (error: any) {
-      setSuccess(false);
-      setError(error.response?.data?.error || 'Failed to create document');
-      toast.error(error.response?.data?.error || 'Failed to create document');
+      // Check if this is a server response with an error message
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.message;
+      if (errorMessage) {
+        toast.error(errorMessage, { id: toastId });
+      } else {
+        // For network errors or other issues
+        toast.error('Failed to create document', { id: toastId });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -197,23 +212,21 @@ const CreateDocumentPage: React.FC = () => {
           </button>
           <div className="flex gap-3">
             <button
-              type="button"
-              onClick={() => {
-                // Preview functionality could be added here
-                toast('Preview feature coming soon!');
-              }}
-              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center"
-            >
-              <Eye className="h-4 w-4 mr-2" />
-              Preview
-            </button>
-            <button
               type="submit"
-              disabled={isLoading || !content.trim()}
-              className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              disabled={isLoading}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Save className="h-4 w-4 mr-2" />
-              {isLoading ? 'Creating...' : 'Create Document'}
+              {isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Create Document
+                </>
+              )}
             </button>
           </div>
         </div>
