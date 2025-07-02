@@ -1,9 +1,43 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
-const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { authenticateToken, authorizeRoles, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Search users endpoint (public)
+router.get('/search', async (req, res) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query || query.length < 2) {
+      return res.json({ data: [] });
+    }
+
+    const searchQuery = `
+      SELECT id, name, email 
+      FROM users 
+      WHERE LOWER(name) LIKE LOWER(?) OR LOWER(email) LIKE LOWER(?)
+      LIMIT 10
+    `;
+
+    const searchPattern = `%${query}%`;
+    const result = await db.query(searchQuery, [searchPattern, searchPattern]);
+    
+    // Return data in the expected format
+    return res.json({
+      data: result.map(user => ({
+        id: user.id,
+        name: user.name,
+        email: user.email
+      }))
+    });
+  } catch (error) {
+    console.error('Error searching users:', error);
+    // Return empty array instead of error to handle gracefully
+    return res.json({ data: [] });
+  }
+});
 
 // Get all users (admin only)
 router.get('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {

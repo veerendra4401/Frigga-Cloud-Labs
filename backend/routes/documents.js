@@ -4,6 +4,64 @@ const db = require('../config/database');
 const { authenticateToken, checkDocumentAccess, authorizeRoles, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
+// Create a mention in a document
+router.post('/:id/mentions', authenticateToken, checkDocumentAccess, [
+  body('userId').notEmpty().withMessage('User ID is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        details: errors.array()
+      });
+    }
+
+    const document = req.document;
+    const mentionedUserId = req.body.userId;
+    const mentionedBy = req.user.id;
+
+    // Check if mentioned user exists
+    const users = await db.query('SELECT id FROM users WHERE id = ?', [mentionedUserId]);
+    let userExists = false;
+    if (Array.isArray(users) && Array.isArray(users[0])) {
+      userExists = users[0].length > 0;
+    } else if (Array.isArray(users)) {
+      userExists = users.length > 0;
+    }
+    if (!userExists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User to mention not found'
+      });
+    }
+
+    // Insert mention
+    await db.query(
+      'INSERT INTO mentions (document_id, user_id, mentioned_by) VALUES (?, ?, ?)',
+      [document.id, mentionedUserId, mentionedBy]
+    );
+
+    // Optionally, create a notification for the mentioned user
+    await db.query(
+      'INSERT INTO notifications (user_id, type, title, message) VALUES (?, ?, ?, ?)',
+      [mentionedUserId, 'MENTION', 'You were mentioned', `You were mentioned in document "${document.title}"`]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Mention created successfully'
+    });
+  } catch (error) {
+    console.error('Create mention error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
 
 // Get all documents (with pagination and search)
 router.get('/', optionalAuth, async (req, res) => {

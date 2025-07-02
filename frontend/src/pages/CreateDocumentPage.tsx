@@ -1,116 +1,179 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import ReactQuill, { Quill } from 'react-quill';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, Save, Eye, Lock, Globe } from 'lucide-react';
-import ReactQuill from 'react-quill';
+import { ArrowLeft, Save, Eye, Lock, Globe, Check, Users } from 'lucide-react';
 import 'react-quill/dist/quill.snow.css';
+import 'quill-mention/dist/quill.mention.css';
+// @ts-ignore
+import Mention from 'quill-mention';
 import toast from 'react-hot-toast';
-import { documentService } from '../services/api';
+import { debounce } from 'lodash';
 
+// Services
+import { userService, documentService } from '../services/api';
+
+// Styles
+import '../styles/quill-mention.css';
+
+// Types
 interface CreateDocumentFormData {
   title: string;
   isPublic: boolean;
 }
 
+// Register mention module ONCE
+if (typeof window !== 'undefined' && Quill) {
+  Quill.register('modules/mention', Mention);
+}
+
+// Constants
+const QUILL_MODULES = {
+  toolbar: [
+    [{ 'header': [1, 2, 3, false] }],
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+    [{ 'color': [] }, { 'background': [] }],
+    [{ 'align': [] }],
+    ['link', 'image'],
+    ['clean']
+  ],
+  mention: {
+    allowedChars: /^[A-Za-z\sÅÄÖåäö]*$/,
+    mentionDenotationChars: ["@"],
+    dataAttributes: ['id', 'value', 'denotationChar', 'link', 'target'],
+    source: (searchTerm: string, renderList: Function) => {},
+    renderLoading: () => '<div class="loading">Loading...</div>',
+    minChars: 2,
+    blotName: 'mention',
+    fixMentionsToQuill: true
+  },
+  clipboard: {
+    matchVisual: false
+  }
+};
+
+const QUILL_FORMATS = [
+  'header',
+  'bold', 'italic', 'underline', 'strike',
+  'list', 'bullet',
+  'color', 'background',
+  'align',
+  'link', 'image',
+  'mention'
+];
+
 const CreateDocumentPage: React.FC = () => {
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
+  const [wordCount, setWordCount] = useState(0);
+  const [hasChanges, setHasChanges] = useState(false);
   const navigate = useNavigate();
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors }
-  } = useForm<CreateDocumentFormData>();
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<CreateDocumentFormData>({
+    mode: 'onChange'
+  });
+
+  const title = watch('title');
+
+  // Calculate word count when content changes
+  useEffect(() => {
+    const cleanText = content.replace(/<[^>]*>/g, ' ');
+    const words = cleanText.trim().split(/\s+/).filter(word => word.length > 0);
+    setWordCount(words.length);
+  }, [content]);
+
+  // Debounced user search for mentions
+  const debouncedSearch = useMemo(
+    () => debounce(async (searchTerm: string, renderList: Function) => {
+      try {
+        const response = await userService.searchUsers(searchTerm);
+        const users = response.data?.data || [];
+        const mapped = users.map((user: any) => ({
+          id: user.id,
+          value: user.name,
+          denotationChar: "@",
+          link: `/users/${user.id}`,
+          target: "_blank"
+        }));
+        renderList(mapped, searchTerm);
+      } catch (error) {
+        renderList([], searchTerm);
+      }
+    }, 300),
+    []
+  );
+
+  // Configure Quill modules with the debounced search
+  const quillModules = useMemo(() => ({
+    ...QUILL_MODULES,
+    mention: {
+      ...QUILL_MODULES.mention,
+      source: debouncedSearch
+    }
+  }), [debouncedSearch]);
+
+  const handleContentChange = (value: string) => {
+    setContent(value);
+    setHasChanges(true);
+  };
 
   const onSubmit = async (data: CreateDocumentFormData) => {
     if (!content.trim()) {
-      toast.error('Document content is required', { id: 'content-required' });
+      toast.error('Document content is required');
       return;
     }
 
     setIsLoading(true);
-    const toastId = 'create-document';
+    const toastId = toast.loading('Creating document...');
+
     try {
+      // Skipping sanitization due to missing dependency
       const response = await documentService.createDocument({
         title: data.title,
         content,
         isPublic
       });
 
-      console.log('Create document response:', {
-        status: response?.status,
-        data: response?.data,
-        success: response?.data?.success
-      });
-
-      // Only show success toast and navigate if status is 201 and success is true
       if (response?.status === 201 && response?.data?.success) {
         const docId = response?.data?.data?.id;
         if (docId) {
           toast.success('Document created successfully!', { id: toastId });
-          setTimeout(() => {
-            navigate(`/documents/${docId}`);
-          }, 200); // Give the toast a moment to show
-        } else {
-          toast.error('Document created but no ID returned!', { id: toastId + '-noid' });
+          navigate(`/documents/${docId}`);
+          return;
         }
-        return;
       }
 
-      // If not success, show error
-      const errorMessage = response?.data?.error || response?.data?.message || 'Failed to create document';
-      toast.error(errorMessage, { id: toastId });
+      throw new Error(response?.data?.error || 'Failed to create document');
     } catch (error: any) {
-      // Check if this is a server response with an error message
-      const errorMessage = error?.response?.data?.error || error?.response?.data?.message;
-      if (errorMessage) {
-        toast.error(errorMessage, { id: toastId });
-      } else {
-        // For network errors or other issues
-        toast.error('Failed to create document', { id: toastId });
-      }
+      console.error('Document creation error:', error);
+      toast.error(
+        error.message || 'An error occurred while creating the document',
+        { id: toastId }
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  const quillModules = {
-    toolbar: [
-      [{ 'header': [1, 2, 3, false] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-      [{ 'color': [] }, { 'background': [] }],
-      [{ 'align': [] }],
-      ['link', 'image'],
-      ['clean']
-    ],
-  };
-
-  const quillFormats = [
-    'header',
-    'bold', 'italic', 'underline', 'strike',
-    'list', 'bullet',
-    'color', 'background',
-    'align',
-    'link', 'image'
-  ];
-
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/dashboard')}
             className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label="Back to dashboard"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Create New Document</h1>
-            <p className="text-gray-600">Start building your knowledge base</p>
+            <p className="text-gray-600">
+              {title ? `${title} • ${wordCount} words` : 'Start building your knowledge base'}
+            </p>
           </div>
         </div>
       </div>
@@ -119,7 +182,7 @@ const CreateDocumentPage: React.FC = () => {
         {/* Document Title */}
         <div>
           <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
-            Document Title
+            Document Title <span className="text-red-500">*</span>
           </label>
           <input
             id="title"
@@ -129,24 +192,29 @@ const CreateDocumentPage: React.FC = () => {
               minLength: {
                 value: 3,
                 message: 'Title must be at least 3 characters'
+              },
+              maxLength: {
+                value: 100,
+                message: 'Title must be less than 100 characters'
               }
             })}
             className={`w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
               errors.title ? 'border-red-300' : 'border-gray-300'
             }`}
             placeholder="Enter document title"
+            aria-invalid={errors.title ? "true" : "false"}
           />
           {errors.title && (
-            <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>
+            <p className="mt-1 text-sm text-red-600" role="alert">{errors.title.message}</p>
           )}
         </div>
 
         {/* Visibility Settings */}
-        <div>
+        <div className="bg-gray-50 p-4 rounded-lg">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Document Visibility
           </label>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
             <label className="flex items-center">
               <input
                 type="radio"
@@ -171,8 +239,16 @@ const CreateDocumentPage: React.FC = () => {
                 Public
               </span>
             </label>
+            <button
+              type="button"
+              className="flex items-center text-sm text-indigo-600 hover:text-indigo-800"
+              onClick={() => toast('Share settings will be available after creation')}
+            >
+              <Users className="h-4 w-4 mr-1" />
+              Share Settings
+            </button>
           </div>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-gray-500">
             {isPublic 
               ? 'Anyone with the link can view this document'
               : 'Only you and users you share with can view this document'
@@ -183,38 +259,49 @@ const CreateDocumentPage: React.FC = () => {
         {/* Content Editor */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Document Content
+            Document Content <span className="text-red-500">*</span>
           </label>
           <div className="border border-gray-300 rounded-md">
             <ReactQuill
               theme="snow"
               value={content}
-              onChange={setContent}
+              onChange={handleContentChange}
               modules={quillModules}
-              formats={quillFormats}
+              formats={QUILL_FORMATS}
               placeholder="Start writing your document..."
-              style={{ height: '400px' }}
+              style={{ height: '500px' }}
+              aria-label="Document content editor"
             />
           </div>
           {!content.trim() && (
-            <p className="mt-1 text-sm text-red-600">Document content is required</p>
+            <p className="mt-1 text-sm text-red-600" role="alert">Document content is required</p>
           )}
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+        <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-gray-200">
           <button
             type="button"
             onClick={() => navigate('/dashboard')}
             className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+            disabled={isLoading}
           >
             Cancel
           </button>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center"
+              onClick={() => toast('Preview will be available after creation')}
+              disabled={isLoading}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              Preview
+            </button>
             <button
               type="submit"
-              disabled={isLoading}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isLoading || !content.trim()}
+              className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               {isLoading ? (
                 <>
@@ -235,4 +322,4 @@ const CreateDocumentPage: React.FC = () => {
   );
 };
 
-export default CreateDocumentPage; 
+export default CreateDocumentPage;

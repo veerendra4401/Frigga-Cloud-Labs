@@ -154,6 +154,23 @@ export const userService = {
 
   markNotificationRead: (id: string) =>
     api.put(`/users/notifications/${id}/read`),
+
+  searchUsers: async (query: string) => {
+    try {
+      const response = await api.get('/users/search', { 
+        params: { query },
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      return response;
+    } catch (error: any) {
+      console.error('User search error:', error);
+      // Return empty results instead of throwing an error
+      return { data: { success: true, data: [] } };
+    }
+  }
 };
 
 // Legacy exports for backward compatibility

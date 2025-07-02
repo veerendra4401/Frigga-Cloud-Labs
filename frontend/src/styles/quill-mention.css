@@ -1,0 +1,56 @@
+/* quill-mention styles from https://github.com/afry/quill-mention/blob/master/mention.css */
+
+.ql-mention-list-container {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 9001;
+  margin-top: -1px;
+  box-sizing: border-box;
+  width: 270px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  font-size: 16px;
+  padding: 0;
+}
+
+.ql-mention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ql-mention-list-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.ql-mention-list-item.selected,
+.ql-mention-list-item:hover {
+  background: #f5f5f5;
+}
+
+.ql-mention-list-item.disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+.ql-mention-list-item .ql-mention-list-item-username {
+  color: #888;
+  font-size: 13px;
+  margin-left: 8px;
+}
+
+.ql-mention-list-item .ql-mention-list-item-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
