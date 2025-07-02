@@ -2,7 +2,10 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, Save, Eye, Lock, Globe, Check, Users } from 'lucide-react';
+import { ArrowLeft, Save, Eye, Lock, Globe, Users } from 'lucide-react';
+// CreateDocumentPage.tsx
+// Page for creating a new document with WYSIWYG editor, mentions, and visibility controls.
+
 import 'react-quill/dist/quill.snow.css';
 import 'quill-mention/dist/quill.mention.css';
 // @ts-ignore
