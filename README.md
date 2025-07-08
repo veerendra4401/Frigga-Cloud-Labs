@@ -1,4 +1,4 @@
-# Frigga Knowledge Base Platform
+# Knowledge Base Platform
 
 A modern, Confluence-like knowledge base platform built with React, Express.js, and MySQL. This platform enables teams to create, collaborate, and organize their knowledge with powerful features like real-time editing, version control, and advanced privacy controls.
 
